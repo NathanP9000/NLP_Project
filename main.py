@@ -1,46 +1,55 @@
-import random
+import os
 import re
-import nltk
-import spacy
-from nltk.tokenize import sent_tokenize
-import subprocess
-import os
-import nltk
-from nltk.tokenize import sent_tokenize
-from sentence_transformers import SentenceTransformer
-from sklearn.cluster import KMeans
+import random
+import numpy as np
 from collections import defaultdict
-from sklearn.feature_extraction.text import TfidfVectorizer
-from openai import OpenAI
-import os
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
+
+import nltk
 from nltk.tokenize import sent_tokenize
 
-def semantic_chunking(text, similarity_threshold=0.7):
+import spacy
+import subprocess
+
+from sklearn.cluster import KMeans
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+from sentence_transformers import SentenceTransformer
+
+from openai import OpenAI
+
+def semantic_chunking_avg(text, similarity_threshold=0.7):
     model = SentenceTransformer('all-MiniLM-L6-v2')
     sentences = sent_tokenize(text)
     sentence_embeddings = model.encode(sentences)
 
     chunks = []
     current_chunk = [sentences[0]]
+    current_embeddings = [sentence_embeddings[0]]
 
     for i in range(1, len(sentences)):
-        sim = cosine_similarity(
-            [sentence_embeddings[i - 1]],
-            [sentence_embeddings[i]]
-        )[0][0]
+        current_sentence = sentences[i]
+        current_embedding = sentence_embeddings[i]
+
+        # Compute average embedding of the current chunk
+        avg_embedding = np.mean(current_embeddings, axis=0)
+
+        # Compute similarity between current sentence and average of current chunk
+        sim = cosine_similarity([avg_embedding], [current_embedding])[0][0]
 
         if sim >= similarity_threshold:
-            current_chunk.append(sentences[i])
+            current_chunk.append(current_sentence)
+            current_embeddings.append(current_embedding)
         else:
             chunks.append(" ".join(current_chunk))
-            current_chunk = [sentences[i]]
+            current_chunk = [current_sentence]
+            current_embeddings = [current_embedding]
 
     if current_chunk:
         chunks.append(" ".join(current_chunk))
 
     return chunks
+
 
 
 text_file = open("Output.txt", "w")
