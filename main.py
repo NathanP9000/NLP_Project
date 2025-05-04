@@ -12,82 +12,42 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
 from openai import OpenAI
+# Load spaCy model
+random.seed(42)
+np.random.seed(42)
+nlp = spacy.load("en_core_web_sm")
+
 
 # region Clustering
-################
-# Chunk Creation
-################
-def semantic_chunking_avg(text, similarity_threshold=0.7):
+def extract_entity_evolution(cluster_chunks):
     """
-    Goes through text and groups together similar sentences if they are similar. 
-    Does not group similar sentences if they have unsimilar sentences in between.
-    Start with chunk that has first sentence.
-    Repeat following steps
-    Compute average embedding of chunk
-    Cosine similarity of averageEmbedding to current sentence 
-    If greater than 0.7 add current sentence to chunk
-    else add chunk to chunk list and start a new chunk with the current sentence
+    Given a list of text chunks in a topic cluster, extract named entities
+    and show how they evolve (frequency, context) over time.
+    Returns: A dictionary where keys are entities and values are their mentions per chunk.
+    """
+    entity_evolution = defaultdict(list)  # {entity_text: [chunk_0_context, chunk_1_context, ...]}
 
-    
-    :param text: All sentences in the text.
-    :param similarity_threshold: Cosine similarity needs to return 0.7 in order to add a sentence to a chunk.
-    :return chunks: 
-    """ 
-    model = SentenceTransformer('all-MiniLM-L6-v2')
-    sentences = sent_tokenize(text)
-    sentence_embeddings = model.encode(sentences)
+    for idx, sentence in enumerate(cluster_chunks):
+        doc = nlp(sentence)
+        # Group entities by text
+        entities_in_sentence = defaultdict(list)
+        for ent in doc.ents:
+            if ent.label_ in {"PERSON", "ORG", "GPE", "DATE", "EVENT"}:  # customize this
+                context = ent.sent.text.strip()
+                entities_in_sentence[ent.text].append(context)
 
-    chunks = []
-    current_chunk = [sentences[0]]
-    current_embeddings = [sentence_embeddings[0]]
+        # Aggregate into evolution tracker
+        for entity, contexts in entities_in_sentence.items():
+            entity_evolution[entity].append({
+                "sentence_index": idx,
+                "mentions": len(contexts),
+                "examples": contexts[:3]  # limit context examples for readability
+            })
 
-    for i in range(1, len(sentences)):
-        current_sentence = sentences[i]
-        current_embedding = sentence_embeddings[i]
-
-        # Compute average embedding of the current chunk
-        avg_embedding = np.mean(current_embeddings, axis=0)
-
-        # Compute similarity between current sentence and average of current chunk
-        sim = cosine_similarity([avg_embedding], [current_embedding])[0][0]
-
-        if sim >= similarity_threshold:
-            current_chunk.append(current_sentence)
-            current_embeddings.append(current_embedding)
-        else:
-            chunks.append(" ".join(current_chunk))
-            current_chunk = [current_sentence]
-            current_embeddings = [current_embedding]
-
-    if current_chunk:
-        chunks.append(" ".join(current_chunk))
-
-    return chunks
-
-
-############################
-# Get keywords for a cluster
-############################
-def get_cluster_keywords(texts, labels, num_clusters, topicWords=3):
-    cluster_keywords = {}
-
-    # Goes through each cluster and finds each chunk that belongs to it then uses tfid to get {topicWords} words that describe the cluster 
-    for cluster_id in range(num_clusters): 
-        # Get the sentences that belong to the current cluster
-        cluster_texts = [texts[i] for i in range(len(labels)) if labels[i] == cluster_id]
-
-        # Create a TF-IDF vectorizer and fit it to the cluster's texts
-        vectorizer = TfidfVectorizer(stop_words="english", max_features=topicWords)
-        tfidf_matrix = vectorizer.fit_transform(cluster_texts)
-
-        # Get the top n keywords based on TF-IDF scores
-        feature_names = vectorizer.get_feature_names_out()
-        cluster_keywords[cluster_id] = feature_names
-
-    return cluster_keywords
+    return entity_evolution
 
 ####################
-# Clustering chunks
+# Clustering sentences
 ####################
 def cluster_topics(text,  num_clusters=30):
     """
@@ -100,34 +60,44 @@ def cluster_topics(text,  num_clusters=30):
     :param num_cluster: The number of clusters we want. Represents number of topics we expect in the text. 
     :return topic, clusterkeywords: topic maps each cluster to its chunks. Clusterkeywords maps each cluster to its keywords.  
     """ 
-    # Retrieve chunks from text
-    chunks = semantic_chunking_avg(text, similarity_threshold=0.7)
-    
+
+    # Tokenize sentences
+    sentences = sent_tokenize(text)
+
     # Turn chunks into embeddings
-    model = SentenceTransformer('all-MiniLM-L6-v2')
-    embeddings = model.encode(chunks)
+    model = SentenceTransformer('all-mpnet-base-v2')  # Better for longer chunks
+    embeddings = model.encode(sentences)
 
     # Use KMeans to cluster each chunk
     kmeans = KMeans(n_clusters=num_clusters, random_state=42)
     labels = kmeans.fit_predict(embeddings) # 0 -> numClusters and there are len(chunks) of them (tells us which cluster each chunk belongs to)
-    
+    with open("labels.txt","w") as text_file:
+        text_file.write(str(labels))  
+
     # Put all chunks belonging to a cluster together in chronological order
     topics = defaultdict(list)
-    for label, chunk in zip(labels, chunks):
+    for label, chunk in zip(labels, sentences):
         topics[label].append(chunk)
-    
-    # Get keywords for a chunk (describes each chunk) - might need to do something more descriptive than this
-    cluster_keywords = get_cluster_keywords(chunks, labels, num_clusters)
-    print("Cluster Keywords:", cluster_keywords)
+    sorted_topics = sorted(topics.values(), key=lambda x: len(x), reverse=True)
+    with open("topics.txt", "w") as text_file:
+        for topic in sorted_topics:
+            text_file.write(str(topic))
+            text_file.write('\n')   
+
+    # Track each entities evolution in a chunk
+    cluster_entity_evolution = {}
+    for i, topic in enumerate(sorted_topics):
+        evolution = extract_entity_evolution(topic)
+        cluster_entity_evolution[i] = evolution
 
     # Write down for each cluster keywords and chunks
     with open("topics_and_keywords.txt", "w") as text_file:
         for key in topics.keys():
-            text_file.write(str(cluster_keywords[key]))
+            text_file.write(str(cluster_entity_evolution[key]))
             text_file.write(str(topics[key]))
             text_file.write('\n')
 
-    return topics, cluster_keywords  # Return both topics and keywords
+    return topics, cluster_entity_evolution  # Return both topics and keywords
 #endregion
 
 #region MCQ
@@ -227,13 +197,11 @@ def save_mcqs_to_file(mcq_dict, filename="generated_mcqs.txt"):
 ##################
 # Start of program
 ##################        
-text_file = open("Output.txt", "w")
 # Open the file in read mode ("r")
 with open("history.txt", "r", encoding="utf-8") as file:
     # Read the entire content of the file
     text_content = file.read()
-    topics, clusterkeys = cluster_topics(text_content)
+    topics, cluster_entityEvolution = cluster_topics(text_content)
     #mcqs = generate_all_mcqs(topics, n_questions=5)
     #save_mcqs_to_file(mcqs)
-text_file.close()
 #endregion
