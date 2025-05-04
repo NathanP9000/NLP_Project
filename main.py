@@ -13,6 +13,36 @@ from collections import defaultdict
 from sklearn.feature_extraction.text import TfidfVectorizer
 from openai import OpenAI
 import os
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+from nltk.tokenize import sent_tokenize
+
+def semantic_chunking(text, similarity_threshold=0.7):
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+    sentences = sent_tokenize(text)
+    sentence_embeddings = model.encode(sentences)
+
+    chunks = []
+    current_chunk = [sentences[0]]
+
+    for i in range(1, len(sentences)):
+        sim = cosine_similarity(
+            [sentence_embeddings[i - 1]],
+            [sentence_embeddings[i]]
+        )[0][0]
+
+        if sim >= similarity_threshold:
+            current_chunk.append(sentences[i])
+        else:
+            chunks.append(" ".join(current_chunk))
+            current_chunk = [sentences[i]]
+
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+
+    return chunks
+
+
 text_file = open("Output.txt", "w")
 
 print(os.getenv("GROQ_API_KEY"))
@@ -27,8 +57,7 @@ client = OpenAI(base_url="https://api.groq.com/openai/v1"
 # )
 def cluster_topics(text, chunk_size=3, num_clusters=30):
     # Step 1: Break text into sentence chunks
-    sentences = sent_tokenize(text)
-    chunks = [" ".join(sentences[i:i+chunk_size]) for i in range(0, len(sentences), chunk_size)]
+    chunks = semantic_chunking(text, similarity_threshold=0.7)
     
     # Step 2: Convert chunks to sentence embeddings
     model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -122,8 +151,8 @@ def generate_mcqs_from_cluster(cluster_texts, cluster_name="Topic", n_questions=
             {"role": "user", "content": prompt}
         ]
     )
-
-    return response['choices'][0]['message']['content']
+    print(response)
+    return response.choices[0].message.content.strip()
 
 
 def generate_all_mcqs(topics_dict, model="gpt-4", n_questions=5):
@@ -154,12 +183,18 @@ def generate_all_mcqs(topics_dict, model="gpt-4", n_questions=5):
 
     return mcq_results
 
-
+def save_mcqs_to_file(mcq_dict, filename="generated_mcqs.txt"):
+    with open(filename, "w", encoding="utf-8") as f:
+        for cluster_id, mcqs in mcq_dict.items():
+            f.write(f"\n===== Cluster {cluster_id} =====\n")
+            f.write(mcqs + "\n")
 
 # Open the file in read mode ("r")
 with open("history.txt", "r", encoding="utf-8") as file:
     # Read the entire content of the file
     text_content = file.read()
-    topics = cluster_topics(text_content)
-    generate_a;;_mcqs
+    topics, clusterkeys = cluster_topics(text_content)
+    #generate_all_mcqs(topics, n_questions=5)
+    #mcqs = generate_all_mcqs(topics, n_questions=5)
+    #save_mcqs_to_file(mcqs)
 text_file.close()
