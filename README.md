@@ -104,15 +104,3 @@ NLP_Project/
 └── README.md            # Project documentation
 ```
 
-## Contributing
-Contributions are welcome! To contribute:
-1. Fork the repository.
-2. Create a new branch (`git checkout -b feature/your-feature`).
-3. Make your changes and commit (`git commit -m "Add your feature"`).
-4. Push to the branch (`git push origin feature/your-feature`).
-5. Open a pull request.
-
-Please ensure your code follows the project's coding style and includes tests if applicable. Note that the code is still in development, and variable names/formatting may not be fully optimized.
-
-## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
