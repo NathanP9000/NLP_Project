@@ -36,10 +36,13 @@ def extract_entity_evolution(text):
     entity_data = defaultdict(lambda: {"Properties": set(), "Relations": []})
     context_entities = []
 
+    # add to list to allow more relationships to be captured
     RELATION_SUBJ_DEPS = {"nsubj", "nsubjpass", "agent", "expl"}
     RELATION_OBJ_DEPS = {"dobj", "attr", "prep", "pobj", "acomp", "iobj", "xcomp", "ccomp", "relcl", "advcl"}
     
     for sent in doc.sents:
+
+        # Capture properties of entities
         for token in sent:
             if token.pos_ in {"NOUN", "PROPN"}:
                 ent = token.lemma_.lower()
@@ -48,6 +51,7 @@ def extract_entity_evolution(text):
                     if child.dep_ in {"amod", "compound", "poss", "nummod"} or child.pos_ == "ADJ":
                         entity_data[ent]['Properties'].add(child.text.lower())
 
+        # Capture relationships between entities using subject, object, verb triple
         for token in sent:
             if token.pos_ == "VERB":
                 subj_text, obj_text = None, None
