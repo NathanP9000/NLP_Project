@@ -64,7 +64,26 @@ To set up the project, follow these steps. I strongly recommend using a virtual 
    ```
 
 5. **Set up LLM API key**:
-   
+   Obtain a Groq API key from [https://groq.com](https://groq.com) and set it as an environment variable:
+   - On Windows:
+     ```bash
+     set GROQ_API_KEY=your-api-key
+     ```
+   - On macOS/Linux:
+     - **Option 1: Use `export` command** (temporary, lasts for the current terminal session):
+       ```bash
+       export GROQ_API_KEY=your-api-key
+       ```
+     - **Option 2: Use an `env.sh` file** (persistent across sessions):
+       Create a file named `env.sh` in the project root:
+       ```bash
+       echo "export GROQ_API_KEY=your-api-key" > env.sh
+       ```
+       Source the file to apply the environment variable:
+       ```bash
+       source env.sh
+       ```
+       To make it persistent, source `env.sh` in your shell configuration file (e.g., `~/.bashrc` or `~/.zshrc`) by adding `source /path/to/NLP_Project/env.sh`.   
 
 ## Usage
 1. **Prepare input data**:
