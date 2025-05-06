@@ -1,12 +1,10 @@
 import os
-import re
 import random
 import numpy as np
 from collections import defaultdict
 import nltk
 from nltk.tokenize import sent_tokenize
 import spacy
-import subprocess
 from sklearn.cluster import KMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -15,12 +13,16 @@ import random
 import nltk
 import requests
 nltk.download('punkt_tab')
-# Load spaCy model
 random.seed(42)
 np.random.seed(42)
 nlp = spacy.load("en_core_web_sm")
 
+###############################################################################################
+# Code is still in development and I haven't formatted/named variables in the most readable way
+###############################################################################################
+
 #region clustering
+# Resolve pronouns with the last enitity mentioned in the previous sentence
 def resolve_pronoun_text(pronoun, context_entities):
     pronoun = pronoun.lower()
     if pronoun in {"they", "them", "their"}:
@@ -32,6 +34,13 @@ def resolve_pronoun_text(pronoun, context_entities):
     return pronoun
 
 def extract_entity_evolution(text):
+    """
+    Go through text and collect properties of entities and collect relationships between entities. This enables us to see 
+    how entities change over each cluster. Now it's possible to understand what happens to key entities in each cluster. 
+    So clusters go from chunks of similar sentences to chunks of entites that changed entities in a way we understand.
+
+    :return topic, clusterkeywords: topic maps each cluster to its chunks. Clusterkeywords maps each cluster to its keywords.  
+    """ 
     doc = nlp(str(text))
     entity_data = defaultdict(lambda: {"Properties": set(), "Relations": []})
     context_entities = []
