@@ -1,7 +1,7 @@
 
 # NLP Project: History Quiz Generator
 
-Welcome to the NLP Project! This repository contains a Natural Language Processing (NLP) application that processes a text file to cluster sentences into topics, tracks the evolution of entities across clusters, and generates multiple-choice questions (MCQs) based on the clustered content. The project uses advanced NLP techniques, including sentence embeddings, entity recognition, and integration with the Groq API for question generation, to analyze and summarize historical or textual data (e.g., from `history.txt`).
+Welcome! This repository contains a Natural Language Processing application that processes a text file to cluster sentences into topics, tracks the evolution of entities across clusters, and generates multiple-choice questions based on the clustered content. The project uses advanced NLP techniques, including sentence embeddings, entity recognition, and integration with the Groq API for question generation, to analyze and summarize historical or textual data (e.g., from `history.txt`).
 
 # Report
 https://docs.google.com/document/d/1EjMQ2aIJb6qrNYKEzcZV0XeclVjE8ovlYg8W-gP1IIU/edit?usp=sharing
