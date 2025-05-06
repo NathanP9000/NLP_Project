@@ -40,9 +40,9 @@ To set up the project, follow these steps. I strongly recommend using a virtual 
 
 2. **Create and activate a virtual environment**:
    - On Windows:
-     ```bash
+     ```powershell
      python -m venv venv
-     venv\Scripts\activate
+     .\venv\Scripts\activate
      ```
    - On macOS/Linux:
      ```bash
