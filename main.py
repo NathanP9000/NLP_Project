@@ -19,10 +19,6 @@ nltk.download('punkt_tab')
 random.seed(42)
 np.random.seed(42)
 nlp = spacy.load("en_core_web_sm")
-# These are extensible sets — expand as needed
-PROPERTY_DEPS = {"amod", "compound", "poss", "nmod", "appos", "acl", "advmod"}
-RELATION_SUBJ_DEPS = {"nsubj", "nsubjpass", "agent"}
-RELATION_OBJ_DEPS = {"dobj", "attr", "prep", "pobj", "acomp", "iobj", "xcomp", "ccomp", "relcl", "advcl"}
 
 #region clustering
 def resolve_pronoun_text(pronoun, context_entities):
@@ -41,7 +37,7 @@ def extract_entity_evolution(text):
     context_entities = []
 
     RELATION_SUBJ_DEPS = {"nsubj", "nsubjpass", "agent", "expl"}
-    RELATION_OBJ_DEPS = {"dobj", "attr", "prep", "pobj", "acomp", "oprd", "xcomp"}
+    RELATION_OBJ_DEPS = {"dobj", "attr", "prep", "pobj", "acomp", "iobj", "xcomp", "ccomp", "relcl", "advcl"}
     
     for sent in doc.sents:
         for token in sent:
