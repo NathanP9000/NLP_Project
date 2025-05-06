@@ -39,8 +39,8 @@ To set up the project, follow these steps. I strongly recommend using a virtual 
    ```
 
 2. **Create and activate a virtual environment**:
-   - On Windows:
-     ```powershell
+   - On Windows (powershell):
+     ```bash
      python -m venv venv
      .\venv\Scripts\activate
      ```
