@@ -6,6 +6,9 @@ Welcome! This repository contains a Natural Language Processing application that
 # Report
 https://docs.google.com/document/d/1EjMQ2aIJb6qrNYKEzcZV0XeclVjE8ovlYg8W-gP1IIU/edit?usp=sharing
 
+# Youtube video link
+https://youtu.be/EHXKrjeSstU
+
 ## Table of Contents
 - [Features](#features)
 - [Prerequisites](#prerequisites)
