@@ -11,44 +11,62 @@ from sklearn.cluster import KMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
-from openai import OpenAI
+import random
+import nltk
+import requests
+nltk.download('punkt_tab')
 # Load spaCy model
 random.seed(42)
 np.random.seed(42)
 nlp = spacy.load("en_core_web_sm")
+# These are extensible sets — expand as needed
+PROPERTY_DEPS = {"amod", "compound", "poss", "nmod", "appos", "acl", "advmod"}
+RELATION_SUBJ_DEPS = {"nsubj", "nsubjpass", "agent"}
+RELATION_OBJ_DEPS = {"dobj", "attr", "prep", "pobj", "acomp", "iobj", "xcomp", "ccomp", "relcl", "advcl"}
 
+#region clustering
+def resolve_pronoun_text(pronoun, context_entities):
+    pronoun = pronoun.lower()
+    if pronoun in {"they", "them", "their"}:
+        return context_entities[-1] if context_entities else pronoun
+    elif pronoun in {"he", "him", "his", "she", "her"}:
+        return context_entities[-1] if context_entities else pronoun
+    elif pronoun in {"it", "its"}:
+        return context_entities[-1] if context_entities else pronoun
+    return pronoun
 
-# region Clustering
-def extract_entity_evolution(cluster_chunks):
-    """
-    Given a list of text chunks in a topic cluster, extract named entities
-    and show how they evolve (frequency, context) over time.
-    Returns: A dictionary where keys are entities and values are their mentions per chunk.
-    """
-    entity_evolution = defaultdict(list)  # {entity_text: [chunk_0_context, chunk_1_context, ...]}
+def extract_entity_evolution(text):
+    doc = nlp(str(text))
+    entity_data = defaultdict(lambda: {"Properties": set(), "Relations": []})
+    context_entities = []
 
-    for idx, sentence in enumerate(cluster_chunks):
-        doc = nlp(sentence)
-        # Group entities by text
-        entities_in_sentence = defaultdict(list)
-        for ent in doc.ents:
-            if ent.label_ in {"PERSON", "ORG", "GPE", "DATE", "EVENT"}:  # customize this
-                context = ent.sent.text.strip()
-                entities_in_sentence[ent.text].append(context)
+    RELATION_SUBJ_DEPS = {"nsubj", "nsubjpass", "agent", "expl"}
+    RELATION_OBJ_DEPS = {"dobj", "attr", "prep", "pobj", "acomp", "oprd", "xcomp"}
+    
+    for sent in doc.sents:
+        for token in sent:
+            if token.pos_ in {"NOUN", "PROPN"}:
+                ent = token.lemma_.lower()
+                context_entities.append(ent)
+                for child in token.children:
+                    if child.dep_ in {"amod", "compound", "poss", "nummod"} or child.pos_ == "ADJ":
+                        entity_data[ent]['Properties'].add(child.text.lower())
 
-        # Aggregate into evolution tracker
-        for entity, contexts in entities_in_sentence.items():
-            entity_evolution[entity].append({
-                "sentence_index": idx,
-                "mentions": len(contexts),
-                "examples": contexts[:3]  # limit context examples for readability
-            })
+        for token in sent:
+            if token.pos_ == "VERB":
+                subj_text, obj_text = None, None
+                for child in token.children:
+                    if child.dep_ in RELATION_SUBJ_DEPS:
+                        subj_text = resolve_pronoun_text(child.text, context_entities) if child.pos_ == "PRON" else child.lemma_.lower()
+                    elif child.dep_ in RELATION_OBJ_DEPS:
+                        obj_text = resolve_pronoun_text(child.text, context_entities) if child.pos_ == "PRON" else child.lemma_.lower()
+                if subj_text:
+                    entity_data[subj_text]['Relations'].append((token.lemma_, obj_text))
+    return entity_data
 
-    return entity_evolution
-
-####################
-# Clustering sentences
-####################
+#####################################
+# Create clusters based on similarity
+#####################################
 def cluster_topics(text,  num_clusters=30):
     """
     Group the text into chunks and then create clusters for each chunk.
@@ -84,19 +102,20 @@ def cluster_topics(text,  num_clusters=30):
             text_file.write(str(topic))
             text_file.write('\n')   
 
-    # Track each entities evolution in a chunk
+    # Track each entity's evolution in a chunk
     cluster_entity_evolution = {}
     for i, topic in enumerate(sorted_topics):
         evolution = extract_entity_evolution(topic)
         cluster_entity_evolution[i] = evolution
 
-    # Write down for each cluster keywords and chunks
-    with open("topics_and_keywords.txt", "w") as text_file:
-        for key in topics.keys():
-            text_file.write(str(cluster_entity_evolution[key]))
-            text_file.write(str(topics[key]))
-            text_file.write('\n')
-
+    # Write entity evolution to file
+    with open("entity_evolution.txt", "w", encoding="utf-8") as f:
+        for cluster_id, entities in cluster_entity_evolution.items():
+            f.write(f"\n=== Cluster {cluster_id} ===\n")
+            for ent, info in entities.items():
+                f.write(f"Entity: {ent}\n")
+                f.write(f"  Properties: {info['Properties']}\n")
+                f.write(f"  Relations: {info['Relations']}\n")
     return topics, cluster_entity_evolution  # Return both topics and keywords
 #endregion
 
@@ -104,9 +123,9 @@ def cluster_topics(text,  num_clusters=30):
 ###########################
 # Generate MCQ from cluster
 ###########################
-def generate_mcqs_from_cluster(cluster_texts, cluster_name="Topic", n_questions=5):
+def generate_mcqs_from_cluster(cluster_texts, cluster_entities,cluster_name="Topic", n_questions=5):
     """
-    Generates multiple choice questions from a cluster of text chunks.
+    Generates multiple choice questions from a cluster of text chunks using Groq API with requests.
 
     Args:
         cluster_texts (list[str]): List of chunk strings from a single topic cluster.
@@ -118,15 +137,19 @@ def generate_mcqs_from_cluster(cluster_texts, cluster_name="Topic", n_questions=
     combined_text = "\n".join(cluster_texts)
     
     prompt = f"""
-        You are an expert history teacher. Read the following content and generate {n_questions} multiple choice questions based on it.
-        Each question should have one correct answer and three plausible distractors.
+        The following content is a breakdown of entities their properties and relationships between entiies. Analyze what's given and generate {n_questions} multiple choice questions based on it.
+        I want one correct answer. One answer that is a distractor and is based off of the properties and entities as well. Then I want one answer that is wrong but is still relevant you can generate this. After creation I want each multiple choice question
+        to be briefly cited back to the content I gave you.
+
+        Note that in some of the content that is provided the context of the entities is not obvious. Pick what makes sense for the question.
+
         Topic: {cluster_name}
 
         Content:
         \"\"\"
-        {combined_text}
+        {cluster_entities}
         \"\"\"
-
+        
         Format:
         Q1. [question]
         A. [option 1]
@@ -135,52 +158,94 @@ def generate_mcqs_from_cluster(cluster_texts, cluster_name="Topic", n_questions=
         D. [correct answer]
         Answer: D
         ---
+        Explanation:
+        Correct Answer: Explain based on the properties and entities from the document
+        Distractor: Explain based on the properties and entities from the document
         (Repeat this format for each question.)
-        """
+    """
 
-    client = OpenAI(base_url="https://api.groq.com/openai/v1"
-                    ,api_key=os.getenv("GROQ_API_KEY"))
-
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
+    # Groq API endpoint
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    
+    # Prepare the payload
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": [
             {"role": "system", "content": "You generate multiple choice quiz questions from historical material."},
             {"role": "user", "content": prompt}
-        ]
-    )
-    print(response)
-    return response.choices[0].message.content.strip()
+        ],
+        "max_tokens": 2048,  # Adjust as needed
+        "temperature": 0.7   # Adjust for creativity if needed
+    }
+    
+    # Set headers with API key
+    headers = {
+        "Authorization": f"Bearer {os.getenv('GROQ_API_KEY')}",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        # Make the POST request
+        response = requests.post(url, json=payload, headers=headers)
+        
+        # Check for successful response
+        response.raise_for_status()
+        
+        # Parse the JSON response
+        response_data = response.json()
+        
+        # Extract the generated content
+        generated_content = response_data["choices"][0]["message"]["content"].strip()
+        
+        return generated_content
+    
+    except requests.exceptions.HTTPError as http_err:
+        print(f"HTTP error occurred: {http_err}")
+        return None
+    except requests.exceptions.RequestException as req_err:
+        print(f"Request error occurred: {req_err}")
+        return None
+    except KeyError as key_err:
+        print(f"Error parsing response: {key_err}")
+        return None
 
 
-##################################################
-# Pass in clusters one by one and ask LLM for MCQs
-##################################################
-def generate_all_mcqs(topics_dict, n_questions=5):
+def generate_random_mcqs(topics_dict,cluster_entityEvolution,num_clusters=5, n_questions=3):
     """
-    Sorts clusters by size and generates MCQs for each cluster using an LLM.
-
+    Randomly selects clusters and generates MCQs for each selected cluster using an LLM.
+    
     Args:
         topics_dict (dict[int, list[str]]): Dictionary of clustered topic chunks.
-        model (str): LLM model to use.
+        num_clusters (int): Number of clusters to randomly select.
         n_questions (int): Number of questions per cluster.
-
+    
     Returns:
         dict[int, str]: Mapping of cluster_id to generated MCQs.
     """
-    # Step 1: Sort clusters by descending size
-    sorted_clusters = sorted(topics_dict.items(), key=lambda x: len(x[1]), reverse=True)
-
+    # Step 1: Randomly select clusters
+    all_cluster_ids = list(topics_dict.keys())
+    
+    # Make sure we don't try to select more clusters than exist
+    num_clusters = min(num_clusters, len(all_cluster_ids))
+    
+    # Randomly select cluster IDs
+    selected_cluster_ids = random.sample(all_cluster_ids, num_clusters)
+    
+    # Step 2: Generate MCQs for selected clusters
     mcq_results = {}
-    for cluster_id, cluster_texts in sorted_clusters:
+    for cluster_id in selected_cluster_ids:
+        cluster_texts = topics_dict[cluster_id]
+        cluster_entities = cluster_entityEvolution[cluster_id]
         print(f"\nGenerating MCQs for Cluster {cluster_id} ({len(cluster_texts)} chunks)...")
         cluster_name = f"Cluster {cluster_id}"
+        
         try:
-            mcqs = generate_mcqs_from_cluster(cluster_texts, cluster_name, n_questions)
+            mcqs = generate_mcqs_from_cluster(cluster_texts,cluster_entities, cluster_name, n_questions)
             mcq_results[cluster_id] = mcqs
         except Exception as e:
             print(f"Failed to generate MCQs for Cluster {cluster_id}: {e}")
-            mcq_results[cluster_id] = "Error generating MCQs."
-
+            mcq_results[cluster_id] = f"Error generating MCQs: {str(e)}"
+    
     return mcq_results
 
 #########################
@@ -202,6 +267,6 @@ with open("history.txt", "r", encoding="utf-8") as file:
     # Read the entire content of the file
     text_content = file.read()
     topics, cluster_entityEvolution = cluster_topics(text_content)
-    #mcqs = generate_all_mcqs(topics, n_questions=5)
-    #save_mcqs_to_file(mcqs)
+    mcqs = generate_random_mcqs(topics, cluster_entityEvolution)
+    save_mcqs_to_file(mcqs)
 #endregion

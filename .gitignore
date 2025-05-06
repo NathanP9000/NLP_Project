@@ -1,2 +1,4 @@
 .bashrc
 *.txt
+!history.txt
+!requirements.txt
